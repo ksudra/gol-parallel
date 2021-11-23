@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
+
 	// "os"
 	"uk.ac.bris.cs/gameoflife/util"
 )
@@ -28,22 +30,22 @@ func distributor(p Params, c distributorChannels) {
 
 	world := buildWorld(p, c)
 	//alive := make(chan []util.Cell)
-	//ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(2 * time.Second)
 
 	// TODO: Create a 2D slice to store the world.
 
 	turn := 0
 
 	for turn = 0; turn < p.Turns; turn++ {
-		//go func() {
-		//	for range ticker.C {
-		//		alive := len(calculateAliveCells(world))
-		//		c.events <- AliveCellsCount{
-		//			CompletedTurns: turn,
-		//			CellsCount:     alive,
-		//		}
-		//	}
-		//}()
+		go func() {
+			for range ticker.C {
+				alive := len(calculateAliveCells(world))
+				c.events <- AliveCellsCount{
+					CompletedTurns: turn,
+					CellsCount:     alive,
+				}
+			}
+		}()
 
 		world = calculateNextState(p, world)
 		c.events <- TurnComplete{
