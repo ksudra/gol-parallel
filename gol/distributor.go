@@ -31,7 +31,7 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 	world := buildWorld(p, c)
 	//alive := make(chan []util.Cell)
 	ticker := time.NewTicker(2 * time.Second)
-
+	//finished := make(chan bool)
 	// TODO: Create a 2D slice to store the world.
 
 	turn := 0
@@ -47,14 +47,13 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 			}
 		}()
 
-		world = calculateNextState(p, world)
+		world = calculateNextState(p, world, turn, c)
 		c.events <- TurnComplete{
 			CompletedTurns: turn,
 		}
 
-		select {
-		case keyPress := <-keyPresses:
-			switch keyPress {
+		if keyPresses != nil {
+			switch <-keyPresses {
 			case 's':
 				sendWorld(p, c, world, turn)
 			case 'q':
@@ -63,14 +62,35 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 			case 'p':
 				c.events <- StateChange{CompletedTurns: turn, NewState: Paused}
 				for {
-					keyPress = <-keyPresses
-					if keyPress == 'p' {
+					if <-keyPresses == 'p' {
 						c.events <- StateChange{CompletedTurns: turn, NewState: Executing}
 						break
 					}
 				}
+			default:
+				break
 			}
 		}
+
+		//select {
+		//case keyPress := <-keyPresses:
+		//	switch keyPress {
+		//	case 's':
+		//		sendWorld(p, c, world, turn)
+		//	case 'q':
+		//		sendWorld(p, c, world, turn)
+		//		break
+		//	case 'p':
+		//		c.events <- StateChange{CompletedTurns: turn, NewState: Paused}
+		//		for {
+		//			keyPress = <-keyPresses
+		//			if keyPress == 'p' {
+		//				c.events <- StateChange{CompletedTurns: turn, NewState: Executing}
+		//				break
+		//			}
+		//		}
+		//	}
+		//}
 	}
 
 	// TODO: Execute all turns of the Game of Life.
@@ -80,12 +100,11 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 		CompletedTurns: turn,
 		Alive:          calculateAliveCells(world),
 	}
-
-	name := strings.Join([]string{strconv.Itoa(p.ImageWidth), strconv.Itoa(p.ImageHeight), strconv.Itoa(turn)}, "x")
+	ticker.Stop()
 
 	c.events <- ImageOutputComplete{
 		CompletedTurns: turn,
-		Filename:       strings.Join([]string{name, strconv.Itoa(p.Threads)}, "-"),
+		Filename:       strings.Join([]string{strconv.Itoa(p.ImageWidth), strconv.Itoa(p.ImageHeight), strconv.Itoa(turn)}, "x"),
 	}
 
 	// TODO: Report the final state using FinalTurnCompleteEvent.
@@ -109,6 +128,12 @@ func buildWorld(p Params, c distributorChannels) [][]byte {
 		world[y] = make([]byte, p.ImageWidth)
 		for x := range world[y] {
 			world[y][x] = <-c.ioInput
+			if world[y][x] == 255 {
+				c.events <- CellFlipped{
+					CompletedTurns: 0,
+					Cell:           util.Cell{X: x, Y: y},
+				}
+			}
 		}
 	}
 
@@ -117,8 +142,9 @@ func buildWorld(p Params, c distributorChannels) [][]byte {
 
 func sendWorld(p Params, c distributorChannels, world [][]byte, turn int) {
 	c.ioCommand <- ioOutput
-	name := strings.Join([]string{strconv.Itoa(p.ImageWidth), strconv.Itoa(p.ImageHeight), strconv.Itoa(turn)}, "x")
-	c.ioFilename <- strings.Join([]string{name, strconv.Itoa(p.Threads)}, "-")
+	//name := strings.Join([]string{strconv.Itoa(p.ImageWidth), strconv.Itoa(p.ImageHeight), strconv.Itoa(turn)}, "x")
+	//c.ioFilename <- strings.Join([]string{name, strconv.Itoa(p.Threads)}, "-")
+	c.ioFilename <- strings.Join([]string{strconv.Itoa(p.ImageWidth), strconv.Itoa(p.ImageHeight), strconv.Itoa(turn)}, "x")
 	for y := range world {
 		for x := range world[y] {
 			c.ioOutput <- world[y][x]
@@ -149,7 +175,7 @@ func countNeighbours(p Params, x int, y int, world [][]uint8) int {
 	return count
 }
 
-func calculateNextState(p Params, world [][]byte) [][]byte {
+func calculateNextState(p Params, world [][]byte, turn int, c distributorChannels) [][]byte {
 	tempWorld := make([][]byte, len(world))
 	for i := range world {
 		tempWorld[i] = make([]byte, len(world[i]))
@@ -163,7 +189,7 @@ func calculateNextState(p Params, world [][]byte) [][]byte {
 		start := i * (p.ImageHeight - p.ImageHeight%p.Threads) / p.Threads
 		end := start + (p.ImageHeight-p.ImageHeight%p.Threads)/p.Threads
 		wg.Add(1)
-		go worker(&wg, start, end, p, tempWorld, world)
+		go worker(&wg, start, end, p, tempWorld, world, turn, c)
 
 	}
 	wg.Wait()
@@ -171,7 +197,7 @@ func calculateNextState(p Params, world [][]byte) [][]byte {
 	if p.ImageHeight%p.Threads > 0 {
 		start := p.ImageHeight - p.ImageHeight%p.Threads
 		remainder.Add(1)
-		go worker(&remainder, start, p.ImageHeight, p, tempWorld, world)
+		go worker(&remainder, start, p.ImageHeight, p, tempWorld, world, turn, c)
 	}
 
 	remainder.Wait()
@@ -179,7 +205,7 @@ func calculateNextState(p Params, world [][]byte) [][]byte {
 	return tempWorld
 }
 
-func worker(wg *sync.WaitGroup, start int, end int, p Params, newWorld [][]byte, world [][]byte) {
+func worker(wg *sync.WaitGroup, start int, end int, p Params, newWorld [][]byte, world [][]byte, turn int, c distributorChannels) {
 	defer wg.Done()
 
 	for y := start; y < end; y++ {
@@ -188,8 +214,16 @@ func worker(wg *sync.WaitGroup, start int, end int, p Params, newWorld [][]byte,
 
 			if world[y][x] == 255 && (count < 2 || count > 3) {
 				newWorld[y][x] = 0
+				c.events <- CellFlipped{
+					CompletedTurns: turn,
+					Cell:           util.Cell{X: x, Y: y},
+				}
 			} else if world[y][x] == 0 && count == 3 {
 				newWorld[y][x] = 255
+				c.events <- CellFlipped{
+					CompletedTurns: turn,
+					Cell:           util.Cell{X: x, Y: y},
+				}
 			}
 		}
 	}
