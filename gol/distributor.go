@@ -26,7 +26,7 @@ type GameOfLife struct {
 }
 
 // distributor divides the work between workers and interacts with other goroutines.
-func distributor(p Params, c distributorChannels) {
+func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 
 	world := buildWorld(p, c)
 	//alive := make(chan []util.Cell)
@@ -52,6 +52,25 @@ func distributor(p Params, c distributorChannels) {
 			CompletedTurns: turn,
 		}
 
+		select {
+		case keyPress := <-keyPresses:
+			switch keyPress {
+			case 's':
+				sendWorld(p, c, world, turn)
+			case 'q':
+				sendWorld(p, c, world, turn)
+				break
+			case 'p':
+				c.events <- StateChange{CompletedTurns: turn, NewState: Paused}
+				for {
+					keyPress = <-keyPresses
+					if keyPress == 'p' {
+						c.events <- StateChange{CompletedTurns: turn, NewState: Executing}
+						break
+					}
+				}
+			}
+		}
 	}
 
 	// TODO: Execute all turns of the Game of Life.
@@ -95,6 +114,7 @@ func buildWorld(p Params, c distributorChannels) [][]byte {
 
 	return world
 }
+
 func sendWorld(p Params, c distributorChannels, world [][]byte, turn int) {
 	c.ioCommand <- ioOutput
 	name := strings.Join([]string{strconv.Itoa(p.ImageWidth), strconv.Itoa(p.ImageHeight), strconv.Itoa(turn)}, "x")
