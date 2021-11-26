@@ -30,9 +30,8 @@ type GameOfLife struct {
 func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 
 	world := buildWorld(p, c)
-	//alive := make(chan []util.Cell)
 	ticker := time.NewTicker(2 * time.Second)
-	//finished := make(chan bool)
+	finished := false
 	// TODO: Create a 2D slice to store the world.
 
 	turn := 0
@@ -54,21 +53,23 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 		}
 
 		select {
-		case keyPress := <-keyChan:
-			switch keyPress {
+		case input := <-keyPresses:
+			switch input {
 			case 's':
-				generateOutput(p, c, world, turn)
+				sendWorld(p, c, world, turn)
 			case 'q':
-				generateOutput(p, c, world, turn)
-				exit = true
+				sendWorld(p, c, world, turn)
+				finished = true
 			case 'p':
 				c.events <- StateChange{CompletedTurns: turn, NewState: Paused}
 				fmt.Printf("Current turn: %d\n", turn)
+				ticker.Stop()
 				for {
-					keyPress = <-keyChan
-					if keyPress == 'p' {
+					input = <-keyPresses
+					if input == 'p' {
 						fmt.Println("Continuing")
 						c.events <- StateChange{CompletedTurns: turn, NewState: Executing}
+						ticker = time.NewTicker(2 * time.Second)
 						break
 					}
 				}
@@ -77,49 +78,9 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 			break
 		}
 
-		if exit { //q pressed
+		if finished {
 			break
 		}
-
-		//if keyPresses != nil {
-		//	switch <-keyPresses {
-		//	case 's':
-		//		sendWorld(p, c, world, turn)
-		//	case 'q':
-		//		sendWorld(p, c, world, turn)
-		//		break
-		//	case 'p':
-		//		c.events <- StateChange{CompletedTurns: turn, NewState: Paused}
-		//		for {
-		//			if <-keyPresses == 'p' {
-		//				c.events <- StateChange{CompletedTurns: turn, NewState: Executing}
-		//				break
-		//			}
-		//		}
-		//	default:
-		//		break
-		//	}
-		//}
-
-		//select {
-		//case keyPress := <-keyPresses:
-		//	switch keyPress {
-		//	case 's':
-		//		sendWorld(p, c, world, turn)
-		//	case 'q':
-		//		sendWorld(p, c, world, turn)
-		//		break
-		//	case 'p':
-		//		c.events <- StateChange{CompletedTurns: turn, NewState: Paused}
-		//		for {
-		//			keyPress = <-keyPresses
-		//			if keyPress == 'p' {
-		//				c.events <- StateChange{CompletedTurns: turn, NewState: Executing}
-		//				break
-		//			}
-		//		}
-		//	}
-		//}
 	}
 
 	// TODO: Execute all turns of the Game of Life.
