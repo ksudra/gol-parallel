@@ -1,6 +1,7 @@
 package gol
 
 import (
+	"fmt"
 	//"flag"
 	//"fmt"
 	//"net/rpc"
@@ -52,25 +53,53 @@ func distributor(p Params, c distributorChannels, keyPresses <-chan rune) {
 			CompletedTurns: turn,
 		}
 
-		if keyPresses != nil {
-			switch <-keyPresses {
+		select {
+		case keyPress := <-keyChan:
+			switch keyPress {
 			case 's':
-				sendWorld(p, c, world, turn)
+				generateOutput(p, c, world, turn)
 			case 'q':
-				sendWorld(p, c, world, turn)
-				break
+				generateOutput(p, c, world, turn)
+				exit = true
 			case 'p':
 				c.events <- StateChange{CompletedTurns: turn, NewState: Paused}
+				fmt.Printf("Current turn: %d\n", turn)
 				for {
-					if <-keyPresses == 'p' {
+					keyPress = <-keyChan
+					if keyPress == 'p' {
+						fmt.Println("Continuing")
 						c.events <- StateChange{CompletedTurns: turn, NewState: Executing}
 						break
 					}
 				}
-			default:
-				break
 			}
+		default:
+			break
 		}
+
+		if exit { //q pressed
+			break
+		}
+
+		//if keyPresses != nil {
+		//	switch <-keyPresses {
+		//	case 's':
+		//		sendWorld(p, c, world, turn)
+		//	case 'q':
+		//		sendWorld(p, c, world, turn)
+		//		break
+		//	case 'p':
+		//		c.events <- StateChange{CompletedTurns: turn, NewState: Paused}
+		//		for {
+		//			if <-keyPresses == 'p' {
+		//				c.events <- StateChange{CompletedTurns: turn, NewState: Executing}
+		//				break
+		//			}
+		//		}
+		//	default:
+		//		break
+		//	}
+		//}
 
 		//select {
 		//case keyPress := <-keyPresses:
