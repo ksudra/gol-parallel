@@ -173,24 +173,42 @@ func calculateNextState(p Params, world [][]byte, turn int, c distributorChannel
 	}
 
 	var wg sync.WaitGroup
-	var remainder sync.WaitGroup
+	//var remainder sync.WaitGroup
+	remainder := p.ImageHeight%p.Threads
+    rowSize := (p.ImageHeight - remainder) / p.Threads
+    start, end := 0, 0
 
-	for i := 0; i < p.Threads; i++ {
-		start := i * (p.ImageHeight - p.ImageHeight%p.Threads) / p.Threads
-		end := start + (p.ImageHeight-p.ImageHeight%p.Threads)/p.Threads
+	for i := 0; i < p.Threads - remainder; i++ {
+
+		start = i * rowSize
+		end = start + rowSize
+
 		wg.Add(1)
 		go worker(&wg, start, end, p, tempWorld, world, turn, c)
 
 	}
+
+	if remainder > 0{
+	    rowSize += 1
+	    for i := p.Threads - remainder; i < p.Threads; i++ {
+
+	        start = end
+	        end += rowSize
+
+	        wg.Add(1)
+       		go worker(&wg, start, end, p, tempWorld, world, turn, c)
+
+	    }
+	}
 	wg.Wait()
 
-	if p.ImageHeight%p.Threads > 0 {
-		start := p.ImageHeight - p.ImageHeight%p.Threads
-		remainder.Add(1)
-		go worker(&remainder, start, p.ImageHeight, p, tempWorld, world, turn, c)
-	}
+	//if p.ImageHeight%p.Threads > 0 {
+	//	start := p.ImageHeight - p.ImageHeight%p.Threads
+	//	remainder.Add(1)
+	//	go worker(&remainder, start, p.ImageHeight, p, tempWorld, world, turn, c)
+	//}
 
-	remainder.Wait()
+	//remainder.Wait()
 
 	return tempWorld
 }
